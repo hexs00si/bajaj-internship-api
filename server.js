@@ -1,3 +1,6 @@
+// Load environment variables first
+require('dotenv').config();
+
 const express = require('express');
 const cors = require('cors');
 
@@ -21,12 +24,12 @@ app.post('/bfhl', (req, res) => {
             });
         }
 
-        // **REPLACE WITH YOUR ACTUAL DETAILS**
+        // Get user details from environment variables
         const response = {
             is_success: true,
-            user_id: "shravan_rajput_16042002", // Replace with your name and DOB
-            email: "shravan836.be22@chitkara.edu.in", // Replace with your email
-            roll_number: "2210990836", // Replace with your roll number
+            user_id: process.env.USER_ID || "default_user_ddmmyyyy",
+            email: process.env.EMAIL || "default@example.com",
+            roll_number: process.env.ROLL_NUMBER || "DEFAULT123",
             odd_numbers: [],
             even_numbers: [],
             alphabets: [],
@@ -102,16 +105,26 @@ function generateConcatString(alphabets) {
     return result;
 }
 
-// Simple health check
+// Health check endpoint with environment info
 app.get('/', (req, res) => {
     res.json({
         message: "Bajaj Finserv API is running!",
+        version: process.env.API_VERSION || "1.0.0",
+        environment: process.env.NODE_ENV || "development",
         endpoint: "POST /bfhl"
     });
 });
 
 // Start server
 app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-    console.log(`API available at: http://localhost:${PORT}/bfhl`);
+    console.log(`🚀 Server running on port ${PORT}`);
+    console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`📍 API available at: http://localhost:${PORT}/bfhl`);
+    
+    // Log environment status (don't log sensitive values in production)
+    if (process.env.NODE_ENV === 'development') {
+        console.log(`👤 User ID configured: ${process.env.USER_ID ? 'Yes' : 'No'}`);
+        console.log(`📧 Email configured: ${process.env.EMAIL ? 'Yes' : 'No'}`);
+        console.log(`🎓 Roll Number configured: ${process.env.ROLL_NUMBER ? 'Yes' : 'No'}`);
+    }
 });

@@ -3,26 +3,20 @@ require('dotenv').config();
 
 const express = require('express');
 const cors = require('cors');
+const validateBfhl = require('./validation'); // Import validation middleware
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Middleware
-app.use(express.json());
+app.use(express.json({ limit: '10mb' })); // Add size limit for security
 app.use(cors());
 
-// POST endpoint for /bfhl
-app.post('/bfhl', (req, res) => {
+// POST endpoint for /bfhl with validation
+app.post('/bfhl', validateBfhl, (req, res) => {
     try {
         const { data } = req.body;
-        
-        // Basic validation
-        if (!data || !Array.isArray(data)) {
-            return res.status(400).json({
-                is_success: false,
-                message: "Invalid input. 'data' should be an array."
-            });
-        }
+        // At this point, data is guaranteed to be a valid array due to validation
 
         // Get user details from environment variables
         const response = {
@@ -76,7 +70,7 @@ app.post('/bfhl', (req, res) => {
         res.status(200).json(response);
 
     } catch (error) {
-        console.error('Error:', error);
+        console.error('Error in /bfhl endpoint:', error);
         res.status(500).json({
             is_success: false,
             message: "Internal server error"
@@ -113,6 +107,35 @@ app.get('/', (req, res) => {
         environment: process.env.NODE_ENV || "development",
         endpoint: "POST /bfhl"
     });
+});
+
+// Handle 404 errors
+app.use('*', (req, res) => {
+    res.status(404).json({
+        is_success: false,
+        message: `Route ${req.originalUrl} not found`,
+        available_routes: ['/bfhl']
+    });
+});
+
+// Global error handler
+app.use((err, req, res, next) => {
+    console.error('Unhandled error:', err);
+    res.status(500).json({
+        is_success: false,
+        message: process.env.NODE_ENV === 'development' ? err.message : 'Internal server error'
+    });
+});
+
+// Graceful shutdown
+process.on('SIGTERM', () => {
+    console.log('SIGTERM received. Shutting down gracefully...');
+    process.exit(0);
+});
+
+process.on('SIGINT', () => {
+    console.log('SIGINT received. Shutting down gracefully...');
+    process.exit(0);
 });
 
 // Start server

@@ -3,20 +3,57 @@ require('dotenv').config();
 
 const express = require('express');
 const cors = require('cors');
-const validateBfhl = require('./validation'); // Import validation middleware
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
+const morgan = require('morgan');
+const validateBfhl = require('./validation');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Middleware
-app.use(express.json({ limit: '10mb' })); // Add size limit for security
+// Security middleware - helmet adds 11 security headers
+app.use(helmet({
+    contentSecurityPolicy: false, // Disable CSP for API usage
+    crossOriginEmbedderPolicy: false // Allow cross-origin requests
+}));
+
+// Rate limiting middleware
+const limiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 100, // Limit each IP to 100 requests per windowMs
+    message: {
+        is_success: false,
+        message: 'Too many requests from this IP, please try again later.'
+    },
+    standardHeaders: true, // Return rate limit info in headers
+    legacyHeaders: false, // Disable X-RateLimit-* headers
+});
+
+app.use(limiter);
+
+// CORS configuration
 app.use(cors());
+
+// Body parsing middleware with size limits
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Logging middleware
+if (process.env.NODE_ENV === 'production') {
+    // Use combined format for production (Apache style)
+    app.use(morgan('combined'));
+} else {
+    // Use dev format for development (colorized and concise)
+    app.use(morgan('dev'));
+}
+
+// Trust proxy for accurate IP addresses (important for rate limiting)
+app.set('trust proxy', 1);
 
 // POST endpoint for /bfhl with validation
 app.post('/bfhl', validateBfhl, (req, res) => {
     try {
         const { data } = req.body;
-        // At this point, data is guaranteed to be a valid array due to validation
 
         // Get user details from environment variables
         const response = {
@@ -99,13 +136,17 @@ function generateConcatString(alphabets) {
     return result;
 }
 
-// Health check endpoint with environment info
+// Health check endpoint
 app.get('/', (req, res) => {
     res.json({
         message: "Bajaj Finserv API is running!",
         version: process.env.API_VERSION || "1.0.0",
         environment: process.env.NODE_ENV || "development",
-        endpoint: "POST /bfhl"
+        endpoint: "POST /bfhl",
+        security: {
+            helmet: "enabled",
+            rateLimit: "100 requests per 15 minutes"
+        }
     });
 });
 
@@ -127,22 +168,51 @@ app.use((err, req, res, next) => {
     });
 });
 
-// Graceful shutdown
-process.on('SIGTERM', () => {
-    console.log('SIGTERM received. Shutting down gracefully...');
-    process.exit(0);
+// Graceful shutdown handlers
+const shutDown = (signal) => {
+    console.log(`\n🔌 Received ${signal}. Shutting down gracefully...`);
+    
+    server.close((err) => {
+        if (err) {
+            console.error('❌ Error during server shutdown:', err);
+            process.exit(1);
+        }
+        
+        console.log('✅ HTTP server closed');
+        console.log('👋 Process terminated gracefully');
+        process.exit(0);
+    });
+    
+    // Force close after 10 seconds
+    setTimeout(() => {
+        console.error('⚠️  Could not close connections in time, forcefully shutting down');
+        process.exit(1);
+    }, 10000);
+};
+
+// Listen for termination signals
+process.on('SIGTERM', () => shutDown('SIGTERM'));
+process.on('SIGINT', () => shutDown('SIGINT'));
+
+// Handle uncaught exceptions
+process.on('uncaughtException', (err) => {
+    console.error('💥 Uncaught Exception:', err);
+    process.exit(1);
 });
 
-process.on('SIGINT', () => {
-    console.log('SIGINT received. Shutting down gracefully...');
-    process.exit(0);
+// Handle unhandled promise rejections
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('💥 Unhandled Rejection at:', promise, 'reason:', reason);
+    process.exit(1);
 });
 
 // Start server
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
     console.log(`🚀 Server running on port ${PORT}`);
     console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
     console.log(`📍 API available at: http://localhost:${PORT}/bfhl`);
+    console.log(`🛡️  Security: Helmet enabled, Rate limiting active`);
+    console.log(`📊 Logging: ${process.env.NODE_ENV === 'production' ? 'Combined' : 'Dev'} format`);
     
     // Log environment status (don't log sensitive values in production)
     if (process.env.NODE_ENV === 'development') {
@@ -150,4 +220,6 @@ app.listen(PORT, () => {
         console.log(`📧 Email configured: ${process.env.EMAIL ? 'Yes' : 'No'}`);
         console.log(`🎓 Roll Number configured: ${process.env.ROLL_NUMBER ? 'Yes' : 'No'}`);
     }
+    
+    console.log(`\n📝 Press Ctrl+C to stop the server gracefully`);
 });
